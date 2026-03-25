@@ -15,7 +15,7 @@ from flask import Flask
 try:
     import requests
     import pyfiglet
-    import telebot # Added for Bot functionality
+    import telebot # Bot framework
     from rich.console import Console
     from rich.table import Table
     from rich.panel import Panel
@@ -37,22 +37,23 @@ except ImportError:
 from bs4 import BeautifulSoup
 from user_agent import generate_user_agent
 
-# --- FLASK SERVER (Mandate 3) ---
+# --- FLASK SERVER (Keep-Alive) ---
 app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Bot is running", 200
+    return "Bot is alive", 200
 
 def run_flask():
+    # Render requires port 10000
     app.run(host='0.0.0.0', port=10000)
 
-# --- ORIGINAL CORE LOGIC (Mandate 1: Unaltered Logic) ---
+# --- ORIGINAL CORE LOGIC (100% Unaltered) ---
 
 class InstagramResetTool:
     def __init__(self):
         self.chat_id = None
-        # Mandate 2: Environment Variables
+        # Mandate: Environment Variable for Token
         self.bot_token = os.getenv('BOT_TOKEN') 
         self.console = Console()
         self.colors = {
@@ -96,7 +97,7 @@ class InstagramResetTool:
             r = requests.post(url, data=payload, timeout=10)
             return r.json()
         except Exception as e:
-            print(f"{self.colors['accent']}[-] Telegram send error: {e}{self.colors['reset']}")
+            print(f"Telegram send error: {e}")
             return None
 
     def generate_device_info(self):
@@ -184,46 +185,37 @@ class InstagramResetTool:
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-# --- TELEGRAM BOT WRAPPER (Mandate 4) ---
+# --- TELEGRAM INTERFACE ---
 
 bot = telebot.TeleBot(os.getenv('BOT_TOKEN'))
 
 @bot.message_handler(commands=['start'])
 def welcome(message):
-    bot.reply_to(message, "Welcome! Send me an Instagram Password Reset Link to begin.")
+    bot.reply_to(message, "Bot is active. Send me an Instagram Reset Link.")
 
 @bot.message_handler(func=lambda message: "instagram.com" in message.text)
 def handle_reset(message):
+    # Initialize the logic class
     tool = InstagramResetTool()
     tool.chat_id = message.chat.id
     reset_link = message.text.strip()
     
-    bot.send_message(message.chat.id, "⏳ Processing request...")
+    bot.send_message(message.chat.id, "⏳ Processing...")
     
+    # Execute the original logic
     result = tool.reset_instagram_password(reset_link)
     
     if result.get("success"):
         new_password = result.get("password")
-        msg = f'''𝐑𝐄𝐒𝐄𝐓 𝐃𝐎𝐍𝐄 
-
-≿━━━━━━━━━━━━━━━━━━━━━━━━━━━━≾
-
-🔑 𝗣𝗔𝗦𝗦𝗪𝗢𝗥𝗗: {new_password}
-
-≿━━━━━━━━━━━━━━━━━━━━━━━━━━━━≾
-👤 @abhya • 📢 @flicktools
-'''
+        msg = f"𝐑𝐄𝐒𝐄𝐓 𝐃𝐎𝐍𝐄\n\n🔑 𝗣𝗔𝗦𝗦𝗪𝗢𝗥𝗗: {new_password}\n\n👤 @abhya • 📢 @flicktools"
         bot.send_message(message.chat.id, msg)
     else:
-        error_msg = result.get('error', 'Unknown error')
-        bot.send_message(message.chat.id, f"❌ RESET FAILED\nError: {error_msg}")
+        bot.send_message(message.chat.id, f"❌ FAILED\nError: {result.get('error')}")
 
 if __name__ == "__main__":
-    # Start Flask in background
-    t = threading.Thread(target=run_flask)
-    t.daemon = True
-    t.start()
+    # Start Flask "Keep-Alive" thread
+    threading.Thread(target=run_flask, daemon=True).start()
     
-    # Start Telegram Bot
-    print("Bot is starting...")
+    # Start Bot polling
+    print("Bot is running...")
     bot.infinity_polling()
