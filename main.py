@@ -2,62 +2,52 @@ import os
 import random
 import string
 import uuid
-import base64
-import json
 import threading
-from threading import Thread, Lock
+import time
 from datetime import datetime
-from hashlib import md5
-
-# Flask for Render Keep-Alive
 from flask import Flask
 
+# Mandatory Imports
 try:
     import requests
     import pyfiglet
     import telebot
     from telebot import types 
     from rich.console import Console
-    from rich.table import Table
-    from rich.panel import Panel
-    from rich.text import Text
-    from rich import box
-    from cfonts import render, say
+    from cfonts import render
     from bs4 import BeautifulSoup
     from user_agent import generate_user_agent
 except ImportError:
-    os.system("pip install requests telethon pyfiglet rich cfonts pyTelegramBotAPI flask beautifulsoup4 user-agent")
+    os.system("pip install requests pyTelegramBotAPI pyfiglet rich cfonts beautifulsoup4 user-agent flask")
     import requests
-    import pyfiglet
     import telebot
     from telebot import types
-    from rich.console import Console
-    from rich.table import Table
-    from rich.panel import Panel
-    from rich.text import Text
-    from rich import box
-    from cfonts import render, say
-    from bs4 import BeautifulSoup
-    from user_agent import generate_user_agent
 
-# --- FLASK SERVER (Render Keep-Alive) ---
+# --- CONFIGURATION & GLOBAL STATS ---
+BOT_TOKEN = os.getenv('BOT_TOKEN')
+ADMIN_ID = 5714613336
+STATS = {
+    "total_attempts": 0,
+    "successful_resets": 0,
+    "start_time": datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+}
+
+# --- RENDER KEEP-ALIVE SERVER ---
 app = Flask(__name__)
 
 @app.route('/')
 def health_check():
-    return "Bot is running professionally", 200
+    return "Bot is running 24/7", 200
 
 def run_flask():
-    # Render listens on port 10000
+    # Render requires port 10000
     app.run(host='0.0.0.0', port=10000)
 
 # --- ORIGINAL CORE LOGIC (100% UNALTERED) ---
-
 class InstagramResetTool:
     def __init__(self):
         self.chat_id = None
         self.bot_token = os.getenv('BOT_TOKEN') 
-        self.console = Console()
         self.colors = {
             'primary': '\x1b[38;5;208m',
             'secondary': '\x1b[38;5;214m',
@@ -65,10 +55,7 @@ class InstagramResetTool:
             'warning': '\x1b[1;33m',
             'neutral': '\x1b[2;36m',
             'reset': '\x1b[1;37m',
-            'bg': '\x1b[38;5;{}m'
         }
-        self.b = random.randint(5, 208)
-        self.colors['base'] = self.colors['bg'].format(self.b)
 
     def generate_instagram_password(self):
         words = ['hello', 'insta', 'random', 'python', 'absceb', 'summer', 'winter', 'autumn', 'spring', 'monsoon', 'cool', 'new', 'user', 'alpha', 'beta', 'gamma', 'star', 'moon', 'sun', 'earth', 'mars', 'venus']
@@ -98,7 +85,7 @@ class InstagramResetTool:
         try:
             r = requests.post(url, data=payload, timeout=10)
             return r.json()
-        except Exception as e:
+        except Exception:
             return None
 
     def generate_device_info(self):
@@ -182,90 +169,80 @@ class InstagramResetTool:
                 "password": new_password,
                 "user_id": user_id
             }
-
         except Exception as e:
             return {"success": False, "error": str(e)}
 
-# --- PROFESSIONAL TELEGRAM INTERFACE ---
+# --- TELEGRAM BOT WRAPPER ---
+bot = telebot.TeleBot(BOT_TOKEN)
 
-bot = telebot.TeleBot(os.getenv('BOT_TOKEN'))
-
-def get_main_keyboard():
-    markup = types.InlineKeyboardMarkup(row_width=2)
-    btn_start = types.InlineKeyboardButton("🚀 Start Reset", callback_data="start_reset")
-    btn_stop = types.InlineKeyboardButton("🛑 Stop", callback_data="stop_bot")
-    btn_restart = types.InlineKeyboardButton("🔄 Restart", callback_data="restart_bot")
-    markup.add(btn_start)
-    markup.add(btn_stop, btn_restart)
+def main_keyboard(user_id):
+    markup = types.InlineKeyboardMarkup()
+    markup.add(types.InlineKeyboardButton("🚀 Start Reset", callback_data="start_reset"))
+    if user_id == ADMIN_ID:
+        markup.add(types.InlineKeyboardButton("📊 Admin Stats", callback_data="admin_stats"))
     return markup
 
 @bot.message_handler(commands=['start'])
-def send_welcome(message):
-    welcome_text = (
+def welcome(message):
+    text = (
         "<b>💎 Instagram Reset Premium Tool</b>\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        "Welcome to the professional password reset interface.\n\n"
-        "<b>Status:</b> <pre>Operational 🟢</pre>\n"
-        "<b>Developer:</b> @abhya\n"
+        "Status: 🟢 Operational\n"
+        "Credit: @b44ner\n"
         "━━━━━━━━━━━━━━━━━━━━\n"
-        "<i>Please select an action from the menu below:</i>"
+        "<i>Ready to process your request.</i>"
     )
-    bot.send_message(message.chat.id, welcome_text, parse_mode="HTML", reply_markup=get_main_keyboard())
+    bot.send_message(message.chat.id, text, parse_mode="HTML", reply_markup=main_keyboard(message.from_user.id))
 
 @bot.callback_query_handler(func=lambda call: True)
-def callback_query(call):
+def handle_query(call):
     if call.data == "start_reset":
-        bot.answer_callback_query(call.id)
-        msg = bot.send_message(call.message.chat.id, "🛰 <b>Please send the Instagram Reset Link:</b>", parse_mode="HTML")
-        bot.register_next_step_handler(msg, process_link)
+        msg = bot.send_message(call.message.chat.id, "🛰 <b>Send your Instagram Reset Link:</b>", parse_mode="HTML")
+        bot.register_next_step_handler(msg, run_process)
     
-    elif call.data == "stop_bot":
-        bot.answer_callback_query(call.id, "Bot Stopped")
-        bot.edit_message_text("❌ <b>Session Terminated.</b>\nSend /start to wake the bot up.", call.message.chat.id, call.message.message_id, parse_mode="HTML")
-    
-    elif call.data == "restart_bot":
-        bot.answer_callback_query(call.id, "Restarting Interface...")
-        send_welcome(call.message)
+    elif call.data == "admin_stats" and call.from_user.id == ADMIN_ID:
+        uptime = STATS["start_time"]
+        stats_text = (
+            "<b>🛡 Admin Dashboard</b>\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            f"📈 Total Attempts: {STATS['total_attempts']}\n"
+            f"✅ Successful Resets: {STATS['successful_resets']}\n"
+            f"🕒 Online Since: {uptime}\n"
+            "━━━━━━━━━━━━━━━━━━━━"
+        )
+        bot.send_message(call.message.chat.id, stats_text, parse_mode="HTML")
 
-def process_link(message):
+def run_process(message):
     if "instagram.com" not in message.text:
-        bot.reply_to(message, "❌ <b>Invalid Link!</b> Please send a valid Instagram reset URL.", parse_mode="HTML")
+        bot.reply_to(message, "❌ Invalid Link.")
         return
 
-    status_msg = bot.send_message(message.chat.id, "⏳ <b>Processing Security Protocols...</b>", parse_mode="HTML")
+    status = bot.send_message(message.chat.id, "⏳ <b>Bypassing Protocols...</b>", parse_mode="HTML")
     
+    STATS["total_attempts"] += 1
     tool = InstagramResetTool()
     tool.chat_id = message.chat.id
     result = tool.reset_instagram_password(message.text.strip())
 
     if result.get("success"):
-        new_password = result.get("password")
-        success_text = (
+        STATS["successful_resets"] += 1
+        resp = (
             "<b>𝐑𝐄𝐒𝐄𝐓 𝐒𝐔𝐂𝐂𝐄𝐒𝐒𝐅𝐔𝐋 ✅</b>\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
             f"👤 <b>User ID:</b> <code>{result.get('user_id')}</code>\n"
-            f"🔑 <b>New Pass:</b> <code>{new_password}</code>\n"
+            f"🔑 <b>New Pass:</b> <code>{result.get('password')}</code>\n"
             "━━━━━━━━━━━━━━━━━━━━\n"
-            "✨ <i>Credentials updated successfully.</i>"
+            "Credit: @b44ner"
         )
-        bot.delete_message(message.chat.id, status_msg.message_id)
-        bot.send_message(message.chat.id, success_text, parse_mode="HTML", reply_markup=get_main_keyboard())
+        bot.edit_message_text(resp, message.chat.id, status.message_id, parse_mode="HTML", reply_markup=main_keyboard(message.from_user.id))
     else:
-        error_text = (
-            "<b>𝐑𝐄𝐒𝐄𝐓 𝐅𝐀𝐈𝐋𝐄𝐃 ❌</b>\n"
-            "━━━━━━━━━━━━━━━━━━━━\n"
-            f"⚠️ <b>Error:</b> <code>{result.get('error', 'Unknown Error')}</code>\n"
-            "━━━━━━━━━━━━━━━━━━━━\n"
-            "<i>Please check the link and try again.</i>"
-        )
-        bot.delete_message(message.chat.id, status_msg.message_id)
-        bot.send_message(message.chat.id, error_text, parse_mode="HTML", reply_markup=get_main_keyboard())
+        err = f"<b>𝐑𝐄𝐒𝐄𝐓 𝐅𝐀𝐈𝐋𝐄𝐃 ❌</b>\n\nError: <code>{result.get('error')}</code>"
+        bot.edit_message_text(err, message.chat.id, status.message_id, parse_mode="HTML", reply_markup=main_keyboard(message.from_user.id))
 
-# --- MAIN EXECUTION ---
+# --- EXECUTION ---
 if __name__ == "__main__":
-    # Start Keep-Alive Thread
+    # Start Keep-Alive Server
     threading.Thread(target=run_flask, daemon=True).start()
     
-    print("Professional Bot is Online...")
-    # Polling must be the last line
-    bot.infinity_polling()
+    print("Bot is starting...")
+    bot.infinity_polling() 
